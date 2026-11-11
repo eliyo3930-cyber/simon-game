@@ -1,0 +1,357 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Simon Game</title>
+
+<style>
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: linear-gradient(135deg, #141e30, #243b55);
+    font-family: Arial, sans-serif;
+    color: white;
+}
+
+.game-container {
+    text-align: center;
+    width: 100%;
+    max-width: 500px;
+    padding: 25px;
+}
+
+header {
+    margin-bottom: 30px;
+}
+
+h1 {
+    font-size: 48px;
+    letter-spacing: 8px;
+    margin-bottom: 15px;
+}
+
+.scores {
+    display: flex;
+    justify-content: space-around;
+    font-size: 18px;
+    color: #ddd;
+}
+
+.board {
+    width: 320px;
+    height: 320px;
+    margin: auto;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    position: relative;
+}
+
+.pad {
+    cursor: pointer;
+    border: 5px solid rgba(255,255,255,0.15);
+    border-radius: 25px;
+    transition: 0.15s;
+    opacity: 0.75;
+}
+
+.green {
+    background: #00c853;
+    border-top-left-radius: 100%;
+}
+
+.red {
+    background: #ff1744;
+    border-top-right-radius: 100%;
+}
+
+.yellow {
+    background: #ffea00;
+    border-bottom-left-radius: 100%;
+}
+
+.blue {
+    background: #2979ff;
+    border-bottom-right-radius: 100%;
+}
+
+.pad.active {
+    opacity: 1;
+    filter: brightness(1.8);
+    box-shadow: 0 0 35px white;
+    transform: scale(0.96);
+}
+
+.center-hub {
+    position: absolute;
+    width: 125px;
+    height: 125px;
+    background: #172536;
+    border: 6px solid #fff;
+    border-radius: 50%;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 2;
+}
+
+#start-btn {
+    padding: 9px 18px;
+    background: #fff;
+    color: #172536;
+    border: none;
+    border-radius: 20px;
+    font-weight: bold;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+#start-btn:hover {
+    background: #ddd;
+}
+
+#status-text {
+    font-size: 11px;
+    margin-top: 8px;
+    color: #fff;
+}
+
+@media(max-width: 400px) {
+    .board {
+        width: 280px;
+        height: 280px;
+    }
+
+    h1 {
+        font-size: 38px;
+    }
+}
+</style>
+</head>
+
+<body>
+
+<div class="game-container">
+
+    <header>
+        <h1>SIMON</h1>
+
+        <div class="scores">
+            <p>Level: <span id="level">0</span></p>
+            <p>High Score: <span id="high-score">0</span></p>
+        </div>
+    </header>
+
+    <div class="board">
+
+        <div class="pad green" data-color="green"></div>
+        <div class="pad red" data-color="red"></div>
+        <div class="pad yellow" data-color="yellow"></div>
+        <div class="pad blue" data-color="blue"></div>
+
+        <div class="center-hub">
+            <button id="start-btn">START</button>
+            <p id="status-text">Press Start</p>
+        </div>
+
+    </div>
+</div>
+
+<script>
+const pads = document.querySelectorAll(".pad");
+const startBtn = document.getElementById("start-btn");
+const levelDisplay = document.getElementById("level");
+const highScoreDisplay = document.getElementById("high-score");
+const statusText = document.getElementById("status-text");
+
+let sequence = [];
+let playerSequence = [];
+let level = 0;
+let playing = false;
+let acceptingInput = false;
+let highScore = Number(localStorage.getItem("simonHighScore")) || 0;
+let audioContext;
+
+highScoreDisplay.textContent = highScore;
+
+const colors = ["green", "red", "yellow", "blue"];
+
+const frequencies = {
+    green: 329.63,
+    red: 261.63,
+    yellow: 392.00,
+    blue: 523.25
+};
+
+// Play sound
+function playSound(color) {
+    if (!audioContext) return;
+
+    const oscillator = audioContext.createOscillator();
+    const gain = audioContext.createGain();
+
+    oscillator.type = "sine";
+    oscillator.frequency.value = frequencies[color];
+
+    gain.gain.setValueAtTime(0.2, audioContext.currentTime);
+    gain.gain.exponentialRampToValueAtTime(
+        0.001,
+        audioContext.currentTime + 0.3
+    );
+
+    oscillator.connect(gain);
+    gain.connect(audioContext.destination);
+
+    oscillator.start();
+    oscillator.stop(audioContext.currentTime + 0.3);
+}
+
+// Flash a pad
+function flashPad(color) {
+    const pad = document.querySelector(
+        `[data-color="${color}"]`
+    );
+
+    pad.classList.add("active");
+    playSound(color);
+
+    setTimeout(() => {
+        pad.classList.remove("active");
+    }, 300);
+}
+
+// Start game
+startBtn.addEventListener("click", async () => {
+    if (playing) return;
+
+    audioContext = audioContext ||
+        new (window.AudioContext || window.webkitAudioContext)();
+
+    if (audioContext.state === "suspended") {
+        await audioContext.resume();
+    }
+
+    startGame();
+});
+
+function startGame() {
+    sequence = [];
+    playerSequence = [];
+    level = 0;
+    playing = true;
+    acceptingInput = false;
+
+    levelDisplay.textContent = level;
+    statusText.textContent = "Watch the sequence!";
+    startBtn.textContent = "PLAYING";
+
+    nextLevel();
+}
+
+// Generate next level
+function nextLevel() {
+    playerSequence = [];
+    acceptingInput = false;
+
+    level++;
+    levelDisplay.textContent = level;
+
+    statusText.textContent = "Watch carefully!";
+
+    const randomColor =
+        colors[Math.floor(Math.random() * colors.length)];
+
+    sequence.push(randomColor);
+
+    setTimeout(playSequence, 700);
+}
+
+// Play sequence
+async function playSequence() {
+    for (const color of sequence) {
+        if (!playing) return;
+
+        flashPad(color);
+
+        await new Promise(resolve =>
+            setTimeout(resolve, 650)
+        );
+    }
+
+    if (!playing) return;
+
+    acceptingInput = true;
+    statusText.textContent = "Your turn!";
+}
+
+// Player clicks pad
+pads.forEach(pad => {
+    pad.addEventListener("click", () => {
+        if (!playing || !acceptingInput) return;
+
+        const color = pad.dataset.color;
+
+        flashPad(color);
+
+        playerSequence.push(color);
+
+        checkAnswer();
+    });
+});
+
+// Check player answer
+function checkAnswer() {
+    const index = playerSequence.length - 1;
+
+    if (playerSequence[index] !== sequence[index]) {
+        gameOver();
+        return;
+    }
+
+    if (playerSequence.length === sequence.length) {
+        acceptingInput = false;
+
+        statusText.textContent = "Correct!";
+
+        setTimeout(nextLevel, 900);
+    }
+}
+
+// Game over
+function gameOver() {
+    playing = false;
+    acceptingInput = false;
+
+    statusText.textContent = "Game Over!";
+
+    if (level > highScore) {
+        highScore = level;
+
+        localStorage.setItem(
+            "simonHighScore",
+            highScore
+        );
+
+        highScoreDisplay.textContent = highScore;
+    }
+
+    startBtn.textContent = "RESTART";
+}
+</script>
+
+</body>
+</html>
